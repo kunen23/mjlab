@@ -32,22 +32,22 @@ def terrain_levels_vel(
   env_ids: torch.Tensor,
   command_name: str,
   asset_cfg: SceneEntityCfg = _DEFAULT_SCENE_CFG,
-  move_up_threshold: float = 0.8,
-  move_down_threshold: float = 0.4,
+  lin_vel_threshold_up: float = 0.3,
+  ang_vel_threshold_up: float = 0.2,
+  lin_vel_threshold_down: float = 0.8,
+  ang_vel_threshold_down: float = 0.5,
 ) -> torch.Tensor:
-  """Update terrain levels based on velocity tracking quality.
-
-  Uses the velocity tracking reward as the curriculum metric, considering both
-  linear and angular velocity tracking. This ensures robots that track angular
-  velocity well can progress even with zero linear velocity commands.
+  """Update terrain levels based on velocity tracking error.
 
   Args:
     env: The environment instance.
     env_ids: IDs of environments that terminated this step.
     command_name: Name of the velocity command term.
     asset_cfg: Configuration for the robot asset.
-    move_up_threshold: Tracking quality threshold to progress to harder terrain.
-    move_down_threshold: Tracking quality threshold to regress to easier terrain.
+    lin_vel_threshold_up: Linear velocity error (m/s) below which to progress.
+    ang_vel_threshold_up: Angular velocity error (rad/s) below which to progress.
+    lin_vel_threshold_down: Linear velocity error (m/s) above which to regress.
+    ang_vel_threshold_down: Angular velocity error (rad/s) above which to regress.
   """
   asset: Entity = env.scene[asset_cfg.name]
 
@@ -59,26 +59,19 @@ def terrain_levels_vel(
   command = env.command_manager.get_command(command_name)
   assert command is not None
 
-  # Compute velocity tracking quality for terminating envs.
+  # Compute velocity tracking errors.
   actual_lin = asset.data.root_link_lin_vel_b[env_ids]
   actual_ang = asset.data.root_link_ang_vel_b[env_ids]
 
-  # Linear tracking (xy only, z assumed 0).
-  lin_error = torch.sum(torch.square(command[env_ids, :2] - actual_lin[:, :2]), dim=1)
-  lin_error += torch.square(actual_lin[:, 2])
-  lin_reward = torch.exp(-lin_error / 0.25)
+  lin_error = torch.norm(command[env_ids, :2] - actual_lin[:, :2], dim=1)
+  ang_error = torch.abs(command[env_ids, 2] - actual_ang[:, 2])
 
-  # Angular tracking (z only, xy assumed 0).
-  ang_error = torch.square(command[env_ids, 2] - actual_ang[:, 2])
-  ang_error += torch.sum(torch.square(actual_ang[:, :2]), dim=1)
-  ang_reward = torch.exp(-ang_error / 0.5)
-
-  # Combined tracking quality.
-  tracking_quality = 0.5 * lin_reward + 0.5 * ang_reward
-
-  # Progress based on tracking quality.
-  move_up = tracking_quality > move_up_threshold
-  move_down = (tracking_quality < move_down_threshold) & ~move_up
+  # Progress based on tracking error.
+  move_up = (lin_error < lin_vel_threshold_up) & (ang_error < ang_vel_threshold_up)
+  move_down = (lin_error > lin_vel_threshold_down) | (
+    ang_error > ang_vel_threshold_down
+  )
+  move_down = move_down & ~move_up
 
   # Update terrain levels.
   terrain.update_env_origins(env_ids, move_up, move_down)
