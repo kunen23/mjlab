@@ -111,6 +111,7 @@ class TerrainGenerator:
     counter = 0
     for geom in body.geoms:
       geom.name = f"terrain_{counter}"
+      geom.group = 0
       counter += 1
 
   def _generate_random_terrains(self, spec: mujoco.MjSpec) -> None:

@@ -7,8 +7,7 @@ from mjlab.asset_zoo.robots import (
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs import mdp as envs_mdp
 from mjlab.envs.mdp.actions import JointPositionActionCfg
-from mjlab.managers.event_manager import EventTermCfg
-from mjlab.managers.observation_manager import ObservationTermCfg
+from mjlab.managers import EventTermCfg, ObservationTermCfg, TerminationTermCfg
 from mjlab.sensor import (
   ContactMatch,
   ContactSensorCfg,
@@ -16,6 +15,7 @@ from mjlab.sensor import (
   ObjRef,
   RayCastSensorCfg,
 )
+from mjlab.tasks.velocity import mdp
 from mjlab.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
 from mjlab.utils.noise import UniformNoiseCfg as Unoise
 
@@ -126,10 +126,10 @@ def unitree_go1_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
   cfg.rewards["angular_momentum"].weight = 0.0
   cfg.rewards["air_time"].weight = 0.0
 
-  # cfg.terminations["illegal_contact"] = TerminationTermCfg(
-  #   func=mdp.illegal_contact,
-  #   params={"sensor_name": nonfoot_ground_cfg.name},
-  # )
+  cfg.terminations["illegal_contact"] = TerminationTermCfg(
+    func=mdp.illegal_contact,
+    params={"sensor_name": nonfoot_ground_cfg.name},
+  )
 
   # Apply play mode overrides.
   if play:

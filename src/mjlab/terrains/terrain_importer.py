@@ -159,6 +159,7 @@ class TerrainImporter:
       type=mujoco.mjtGeom.mjGEOM_PLANE,
       size=(0, 0, 0.01),
       material=_DEFAULT_PLANE_MATERIAL.name,
+      group=0,
     )
     spec_cfg.LightCfg(pos=(0, 0, 1.5), type="directional").edit_spec(self._spec)
 
