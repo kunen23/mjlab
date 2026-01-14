@@ -5,10 +5,16 @@ from mjlab.asset_zoo.robots import (
   get_go1_robot_cfg,
 )
 from mjlab.envs import ManagerBasedRlEnvCfg
+from mjlab.envs import mdp as envs_mdp
 from mjlab.envs.mdp.actions import JointPositionActionCfg
-from mjlab.managers.termination_manager import TerminationTermCfg
-from mjlab.sensor import ContactMatch, ContactSensorCfg
-from mjlab.tasks.velocity import mdp
+from mjlab.managers.event_manager import EventTermCfg
+from mjlab.sensor import (
+  ContactMatch,
+  ContactSensorCfg,
+  GridPatternCfg,
+  ObjRef,
+  RayCastSensorCfg,
+)
 from mjlab.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
 
 
@@ -20,6 +26,20 @@ def unitree_go1_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
   cfg.sim.contact_sensor_maxmatch = 500
 
   cfg.scene.entities = {"robot": get_go1_robot_cfg()}
+
+  height_scanner = RayCastSensorCfg(
+    name="terrain_scan",
+    frame=ObjRef(type="body", name="trunk", entity="robot"),
+    ray_alignment="yaw",
+    pattern=GridPatternCfg(size=(0.8, 0.8), resolution=0.2),
+    max_distance=5.0,
+    exclude_parent_body=True,
+    debug_vis=True,
+    viz=RayCastSensorCfg.VizCfg(
+      show_normals=True,
+    ),
+  )
+  cfg.scene.sensors += (height_scanner,)
 
   foot_names = ("FR", "FL", "RR", "RL")
   site_names = ("FR", "FL", "RR", "RL")
@@ -49,7 +69,7 @@ def unitree_go1_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     reduce="none",
     num_slots=1,
   )
-  cfg.scene.sensors = (feet_ground_cfg, nonfoot_ground_cfg)
+  cfg.scene.sensors += (feet_ground_cfg, nonfoot_ground_cfg)
 
   if cfg.scene.terrain is not None and cfg.scene.terrain.terrain_generator is not None:
     cfg.scene.terrain.terrain_generator.curriculum = True
@@ -92,10 +112,10 @@ def unitree_go1_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
   cfg.rewards["angular_momentum"].weight = 0.0
   cfg.rewards["air_time"].weight = 0.0
 
-  cfg.terminations["illegal_contact"] = TerminationTermCfg(
-    func=mdp.illegal_contact,
-    params={"sensor_name": nonfoot_ground_cfg.name},
-  )
+  # cfg.terminations["illegal_contact"] = TerminationTermCfg(
+  #   func=mdp.illegal_contact,
+  #   params={"sensor_name": nonfoot_ground_cfg.name},
+  # )
 
   # Apply play mode overrides.
   if play:
@@ -104,6 +124,11 @@ def unitree_go1_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
 
     cfg.observations["policy"].enable_corruption = False
     cfg.events.pop("push_robot", None)
+    cfg.events["randomize_terrain"] = EventTermCfg(
+      func=envs_mdp.randomize_terrain,
+      mode="reset",
+      params={},
+    )
 
     if cfg.scene.terrain is not None:
       if cfg.scene.terrain.terrain_generator is not None:

@@ -435,6 +435,15 @@ class RayCastSensorCfg(SensorCfg):
   viz: VizCfg = field(default_factory=VizCfg)
   """Visualization settings."""
 
+  use_bvh: bool = True
+  """Use BVH acceleration for ray casting.
+
+  BVH (Bounding Volume Hierarchy) acceleration provides O(log N) ray queries
+  instead of O(N) brute-force, significantly improving performance for scenes
+  with many geometries (20+ geoms). For small scenes, the overhead may negate
+  the benefit, so set to False if experiencing slowdowns with few geoms.
+  """
+
   def build(self) -> RayCastSensor:
     return RayCastSensor(self)
 
@@ -475,6 +484,9 @@ class RayCastSensor(Sensor[RayCastData]):
 
     self._raycast_graph: wp.Graph | None = None
     self._use_cuda_graph: bool = False
+
+    # BVH context for accelerated ray casting.
+    self._bvh_ctx: mjwarp.RayBvhContext | None = None
 
   def edit_spec(
     self,
@@ -554,6 +566,19 @@ class RayCastSensor(Sensor[RayCastData]):
       self._geomgroup = vec6(*groups)
     else:
       self._geomgroup = vec6(-1, -1, -1, -1, -1, -1)  # All groups
+
+    # Build BVH for accelerated ray casting if enabled.
+    if self.cfg.use_bvh:
+      enabled_groups = (
+        list(self.cfg.include_geom_groups)
+        if self.cfg.include_geom_groups is not None
+        else None
+      )
+      self._bvh_ctx = mjwarp.build_ray_bvh(
+        model.struct,  # type: ignore[attr-defined]
+        data.struct,  # type: ignore[attr-defined]
+        enabled_geom_groups=enabled_groups,
+      )
 
     assert self._wp_device is not None
     self._use_cuda_graph = self._wp_device.is_cuda and wp.is_mempool_enabled(
@@ -666,22 +691,52 @@ class RayCastSensor(Sensor[RayCastData]):
 
   def _raycast_direct(self) -> None:
     """Execute raycast kernel directly."""
-    rays(
-      m=self._model.struct,  # type: ignore[attr-defined]
-      d=self._data.struct,  # type: ignore[attr-defined]
-      pnt=self._ray_pnt,
-      vec=self._ray_vec,
-      geomgroup=self._geomgroup,  # type: ignore[arg-type]
-      flg_static=True,
-      bodyexclude=self._ray_bodyexclude,
-      dist=self._ray_dist,
-      geomid=self._ray_geomid,
-      normal=self._ray_normal,
-    )
+    assert self._ray_pnt is not None and self._ray_vec is not None
+    assert self._ray_dist is not None and self._ray_normal is not None
+    assert self._ray_geomid is not None and self._ray_bodyexclude is not None
+
+    if self._bvh_ctx is not None:
+      # Refit BVH with updated geometry positions.
+      mjwarp.refit_ray_bvh(
+        self._model.struct,  # type: ignore[attr-defined]
+        self._data.struct,  # type: ignore[attr-defined]
+        self._bvh_ctx,
+      )
+      # Use BVH-accelerated ray casting.
+      mjwarp.rays_bvh(
+        m=self._model.struct,  # type: ignore[attr-defined]
+        d=self._data.struct,  # type: ignore[attr-defined]
+        ctx=self._bvh_ctx,
+        pnt=self._ray_pnt,
+        vec=self._ray_vec,
+        geomgroup=self._geomgroup,  # type: ignore[arg-type]
+        flg_static=True,
+        bodyexclude=self._ray_bodyexclude,
+        dist=self._ray_dist,
+        geomid=self._ray_geomid,
+        normal=self._ray_normal,
+      )
+    else:
+      # Fall back to brute-force ray casting.
+      rays(
+        m=self._model.struct,  # type: ignore[attr-defined]
+        d=self._data.struct,  # type: ignore[attr-defined]
+        pnt=self._ray_pnt,
+        vec=self._ray_vec,
+        geomgroup=self._geomgroup,  # type: ignore[arg-type]
+        flg_static=True,
+        bodyexclude=self._ray_bodyexclude,
+        dist=self._ray_dist,
+        geomid=self._ray_geomid,
+        normal=self._ray_normal,
+      )
 
   def _perform_raycast(self) -> None:
     assert self._data is not None and self._model is not None
     assert self._local_offsets is not None and self._local_directions is not None
+    assert self._ray_pnt is not None and self._ray_vec is not None
+    assert self._ray_dist is not None and self._ray_normal is not None
+    assert self._ray_bodyexclude is not None
 
     if self._frame_type == "body":
       frame_pos = self._data.xpos[:, self._frame_body_id]
