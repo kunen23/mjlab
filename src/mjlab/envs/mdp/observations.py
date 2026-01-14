@@ -112,4 +112,8 @@ def height_scan(
   from mjlab.sensor import RayCastSensor
 
   sensor: RayCastSensor = env.scene[sensor_name]
-  return sensor.data.pos_w[:, 2].unsqueeze(1) - sensor.data.hit_pos_w[..., 2] - offset
+  heights = (
+    sensor.data.pos_w[:, 2].unsqueeze(1) - sensor.data.hit_pos_w[..., 2] - offset
+  )
+  heights[sensor.data.distances < 0] = float("-inf")
+  return heights

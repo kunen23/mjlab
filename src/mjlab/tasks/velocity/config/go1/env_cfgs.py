@@ -35,7 +35,7 @@ def unitree_go1_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
       frame=ObjRef(type="body", name="trunk", entity="robot"),
       ray_alignment="yaw",
       pattern=GridPatternCfg(size=(1.6, 1.0), resolution=0.1),
-      max_distance=1.0,
+      max_distance=5.0,
       exclude_parent_body=True,
       debug_vis=True,
       viz=RayCastSensorCfg.VizCfg(
@@ -94,10 +94,12 @@ def unitree_go1_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     func=envs_mdp.height_scan,
     params={"sensor_name": "terrain_scan"},
     noise=Unoise(n_min=-0.1, n_max=0.1),
+    clip=(-1.0, 1.0),
   )
   cfg.observations["critic"].terms["height_scan"] = ObservationTermCfg(
     func=envs_mdp.height_scan,
     params={"sensor_name": "terrain_scan"},
+    clip=(-1.0, 1.0),
   )
 
   cfg.events["foot_friction"].params["asset_cfg"].geom_names = geom_names
