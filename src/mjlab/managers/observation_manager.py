@@ -241,7 +241,21 @@ class ObservationManager(ManagerBase):
           )
     for mod in self._group_obs_class_instances.values():
       mod.reset(env_ids=env_ids)
-    return {}
+
+    # Log observation diagnostics.
+    extras: dict[str, float] = {}
+    obs = self.compute()
+    for group_name, group_obs in obs.items():
+      if isinstance(group_obs, torch.Tensor):
+        abs_max = group_obs.abs().max().item()
+        has_nan = torch.isnan(group_obs).any().item()
+        has_inf = torch.isinf(group_obs).any().item()
+        extras[f"Obs/{group_name}_abs_max"] = abs_max
+        if has_nan:
+          extras[f"Obs/{group_name}_has_nan"] = 1.0
+        if has_inf:
+          extras[f"Obs/{group_name}_has_inf"] = 1.0
+    return extras
 
   def compute(
     self, update_history: bool = False

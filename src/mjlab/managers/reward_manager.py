@@ -72,6 +72,10 @@ class RewardManager(ManagerBase):
     self._step_reward = torch.zeros(
       (self.num_envs, len(self._term_names)), dtype=torch.float, device=self.device
     )
+    # Track max abs reward per step for diagnostics.
+    self._max_abs_step_reward = torch.zeros(
+      self.num_envs, dtype=torch.float, device=self.device
+    )
 
   def __str__(self) -> str:
     msg = f"<RewardManager> contains {len(self._term_names)} active terms.\n"
@@ -108,6 +112,9 @@ class RewardManager(ManagerBase):
         episodic_sum_avg / self._env.max_episode_length_s
       )
       self._episode_sums[key][env_ids] = 0.0
+    # Log max abs step reward for diagnostics.
+    extras["Reward/max_abs_step"] = torch.max(self._max_abs_step_reward[env_ids])
+    self._max_abs_step_reward[env_ids] = 0.0
     for term_cfg in self._class_term_cfgs:
       term_cfg.func.reset(env_ids=env_ids)
     return extras
@@ -127,6 +134,10 @@ class RewardManager(ManagerBase):
       self._reward_buf += value
       self._episode_sums[name] += value
       self._step_reward[:, term_idx] = value / scale
+    # Track max abs step reward for diagnostics.
+    self._max_abs_step_reward = torch.maximum(
+      self._max_abs_step_reward, self._reward_buf.abs()
+    )
     return self._reward_buf
 
   def get_active_iterable_terms(self, env_idx):
