@@ -32,8 +32,8 @@ def terrain_levels_vel(
   command_name: str,
   lin_reward_name: str = "track_linear_velocity",
   ang_reward_name: str = "track_angular_velocity",
-  threshold_up: float = 1.6,
-  threshold_down: float = 0.8,
+  threshold_up: float = 1.0,
+  threshold_down: float = 0.3,
 ) -> torch.Tensor:
   """Update terrain levels based on episode-averaged velocity tracking rewards.
 
@@ -44,9 +44,9 @@ def terrain_levels_vel(
     lin_reward_name: Name of the linear velocity tracking reward term.
     ang_reward_name: Name of the angular velocity tracking reward term.
     threshold_up: Average reward above which to progress to harder terrain.
-      With default weight=2.0, perfect tracking gives ~2.0, so 1.6 ≈ 80% tracking.
+      With default weight=2.0, perfect tracking gives ~2.0, so 1.0 ≈ 50% tracking.
     threshold_down: Average reward below which to regress to easier terrain.
-      With default weight=2.0, 0.8 ≈ 40% tracking.
+      With default weight=2.0, 0.3 ≈ 15% tracking.
   """
   del command_name  # Unused, kept for config compatibility.
 
