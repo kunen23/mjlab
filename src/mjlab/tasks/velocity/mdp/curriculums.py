@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING, TypedDict, cast
 
 import torch
 
-from mjlab.entity import Entity
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 
 from .velocity_command import UniformVelocityCommandCfg
@@ -31,46 +30,42 @@ def terrain_levels_vel(
   env: ManagerBasedRlEnv,
   env_ids: torch.Tensor,
   command_name: str,
-  asset_cfg: SceneEntityCfg = _DEFAULT_SCENE_CFG,
-  lin_vel_threshold_up: float = 0.3,
-  ang_vel_threshold_up: float = 0.2,
-  lin_vel_threshold_down: float = 0.8,
-  ang_vel_threshold_down: float = 0.5,
+  lin_reward_name: str = "track_linear_velocity",
+  ang_reward_name: str = "track_angular_velocity",
+  threshold_up: float = 1.6,
+  threshold_down: float = 0.8,
 ) -> torch.Tensor:
-  """Update terrain levels based on velocity tracking error.
+  """Update terrain levels based on episode-averaged velocity tracking rewards.
 
   Args:
     env: The environment instance.
     env_ids: IDs of environments that terminated this step.
-    command_name: Name of the velocity command term.
-    asset_cfg: Configuration for the robot asset.
-    lin_vel_threshold_up: Linear velocity error (m/s) below which to progress.
-    ang_vel_threshold_up: Angular velocity error (rad/s) below which to progress.
-    lin_vel_threshold_down: Linear velocity error (m/s) above which to regress.
-    ang_vel_threshold_down: Angular velocity error (rad/s) above which to regress.
+    command_name: Name of the velocity command term (unused, kept for compatibility).
+    lin_reward_name: Name of the linear velocity tracking reward term.
+    ang_reward_name: Name of the angular velocity tracking reward term.
+    threshold_up: Average reward above which to progress to harder terrain.
+      With default weight=2.0, perfect tracking gives ~2.0, so 1.6 ≈ 80% tracking.
+    threshold_down: Average reward below which to regress to easier terrain.
+      With default weight=2.0, 0.8 ≈ 40% tracking.
   """
-  asset: Entity = env.scene[asset_cfg.name]
+  del command_name  # Unused, kept for config compatibility.
 
   terrain = env.scene.terrain
   assert terrain is not None
   terrain_generator = terrain.cfg.terrain_generator
   assert terrain_generator is not None
 
-  command = env.command_manager.get_command(command_name)
-  assert command is not None
+  # Get episode-accumulated rewards (available before reset clears them).
+  lin_sum = env.reward_manager._episode_sums[lin_reward_name][env_ids]
+  ang_sum = env.reward_manager._episode_sums[ang_reward_name][env_ids]
 
-  # Compute velocity tracking errors.
-  actual_lin = asset.data.root_link_lin_vel_b[env_ids]
-  actual_ang = asset.data.root_link_ang_vel_b[env_ids]
+  # Normalize by episode length to get average reward.
+  avg_lin = lin_sum / env.max_episode_length_s
+  avg_ang = ang_sum / env.max_episode_length_s
 
-  lin_error = torch.norm(command[env_ids, :2] - actual_lin[:, :2], dim=1)
-  ang_error = torch.abs(command[env_ids, 2] - actual_ang[:, 2])
-
-  # Progress based on tracking error.
-  move_up = (lin_error < lin_vel_threshold_up) & (ang_error < ang_vel_threshold_up)
-  move_down = (lin_error > lin_vel_threshold_down) | (
-    ang_error > ang_vel_threshold_down
-  )
+  # Progress based on average tracking reward.
+  move_up = (avg_lin > threshold_up) & (avg_ang > threshold_up)
+  move_down = (avg_lin < threshold_down) | (avg_ang < threshold_down)
   move_down = move_down & ~move_up
 
   # Update terrain levels.
